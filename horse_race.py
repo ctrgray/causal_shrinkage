@@ -16,7 +16,7 @@ import statsmodels.api as sm
 
 np.random.seed(530)
 
-def load_data(*, n=10000, mu=2, sigma=1, num_features=10, ate=10):
+def load_data(*, N=10000, mu=2, sigma=1, num_features=10, ate=10):
     "Create base data."
     # Groundwork
     d = (np.random.uniform(size=N) > 0.5).astype(int)
@@ -52,37 +52,40 @@ def gaussian_qq_plot(yvar, figpath='figures/qq_residuals'):
 
 
 # LOAD DATA #
-data, dgp = load_data(num_features=1)
+data, dgp = load_data(num_features=10)
 resids = residualize_features(data, dgp['features'])
 reg = sm.OLS.from_formula("yresid ~ 1 + dresid", data=data).fit(cov_type='HC3')
-print(reg.summary())
+print(f"Simple Regression ATE: {reg.summary()}")
 
 
 # BAYESIAN HIERARCHICAL MODELS #
 
-# test whether residuals are lognormal
-data['logy'] = np.log(resids['yresid'] - resids['yresid'].min() + 0.01)
-gaussian_qq_plot(data.loc[data['d']==0, 'logy'])
+# compare residuals to a lognormal
+resids = resids.copy()
+resids['logy'] = np.log(resids['yresid'] - resids['yresid'].min() + 1)
+gaussian_qq_plot(resids.loc[data['d']==0, 'logy'])
 
 # run pymc3 model
 with pm.Model() as model:
     alpha = pm.Normal('alpha', mu=0, sigma=100) # very weak priors
     beta = pm.Normal('beta', mu=0, sigma=100)
     mu = alpha + beta*data['d']  # model
-    y_obs = pm.Normal('y_obs', mu=mu, sigma=100, observed=data['logy'])
+    y_obs = pm.Normal('y_obs', mu=mu, sigma=100, observed=data['y'])
+    # TODO: replace with yresid
 
 with model:
     trace = pm.sample(5000, return_inferencedata=True)
 
 # summarize
+print(f"Posterior Summary: \n {az.summary(trace)}")
 az.plot_posterior(trace, var_names=["beta"], hdi_prob=0.94)
 plt.savefig('figures/beta_posterior')
 plt.close()
 
-_posterior_mean = az.summary(trace)['mean']['beta']
-_posterior_sd = az.summary(trace)['sd']['beta']
-_beta = np.exp(_posterior_mean + _posterior_sd**2/2)
-print(_beta)
+# TODO: why is stdev of bayesian method so much wider than stdev of ols?
+# TODO: how would I adapt this to handle a lognormal distribution with a gaussian lift (avoiding <0 errors)?
+
+
 
 
 # R-LEARNER SHRINKAGE #
