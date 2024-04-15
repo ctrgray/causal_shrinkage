@@ -52,7 +52,7 @@ def gaussian_qq_plot(yvar, figpath='figures/qq_residuals'):
 
 
 # LOAD DATA #
-data, dgp = load_data(ate=10)
+data, dgp = load_data(num_features=1)
 resids = residualize_features(data, dgp['features'])
 reg = sm.OLS.from_formula("yresid ~ 1 + dresid", data=data).fit(cov_type='HC3')
 print(reg.summary())
@@ -64,7 +64,7 @@ print(reg.summary())
 data['logy'] = np.log(resids['yresid'] - resids['yresid'].min() + 0.01)
 gaussian_qq_plot(data.loc[data['d']==0, 'logy'])
 
-# set up pymc3 model
+# run pymc3 model
 with pm.Model() as model:
     alpha = pm.Normal('alpha', mu=0, sigma=100) # very weak priors
     beta = pm.Normal('beta', mu=0, sigma=100)
@@ -72,11 +72,17 @@ with pm.Model() as model:
     y_obs = pm.Normal('y_obs', mu=mu, sigma=100, observed=data['logy'])
 
 with model:
-    trace = pm.sample(5000, return_inferencedata=False)
+    trace = pm.sample(5000, return_inferencedata=True)
 
-_beta = np.exp(trace['beta'])
-print(_beta.mean())
+# summarize
+az.plot_posterior(trace, var_names=["beta"], hdi_prob=0.94)
+plt.savefig('figures/beta_posterior')
+plt.close()
 
+_posterior_mean = az.summary(trace)['mean']['beta']
+_posterior_sd = az.summary(trace)['sd']['beta']
+_beta = np.exp(_posterior_mean + _posterior_sd**2/2)
+print(_beta)
 
 
 # R-LEARNER SHRINKAGE #
